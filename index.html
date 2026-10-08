@@ -534,6 +534,7 @@ button.classbtn:hover{background:var(--cyan); color:#000}
 
   function doDeath(killer){
     state.phase = "dead";
+    state.combat = null;
     blank();
     out("YOU HAVE DIED", "bad");
     out("The " + killer + " finishes what it started. Mount Cael keeps its secrets a while longer.");
