@@ -1,0 +1,539 @@
+<title>Take Sword Go North</title>
+<style>
+/* single deliberate world: a ZX Spectrum-era CRT terminal - no light theme, this one only ever looks like this */
+:root{
+  --bg:#000; --ink:#d7d7d7; --cyan:#4ce6e6; --yellow:#e6e64c; --green:#4ce64c;
+  --magenta:#e64ce6; --red:#e64c4c; --blue:#4c4ce6; --dim:#6a6a6a;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:'Courier New',ui-monospace,monospace;
+  padding-left:14px; padding-right:14px; min-height:100%;
+}
+.crt{
+  max-width:720px; margin:0 auto; padding-block:18px 40px;
+  position:relative;
+}
+.crt::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode:overlay;
+}
+.banner{
+  font-family:'Courier New',monospace; font-weight:700; line-height:1.15;
+  color:var(--cyan); font-size:clamp(22px,7vw,42px); letter-spacing:.04em;
+  text-align:center; margin-bottom:4px; text-transform:uppercase;
+  text-shadow:0 0 10px rgba(76,230,230,.55), 0 0 2px rgba(76,230,230,.8);
+}
+.banner .bracket{color:var(--yellow)}
+.subtitle{text-align:center; color:var(--yellow); font-size:.85rem; letter-spacing:.1em; margin-bottom:18px}
+.subtitle .dim{color:var(--dim)}
+
+#screen{
+  border:1px solid #2a2a2a; background:#040404; border-radius:2px;
+  padding:16px 16px 0; min-height:360px;
+}
+#log{white-space:pre-wrap; line-height:1.55; font-size:.95rem; word-wrap:break-word}
+#log .room{color:var(--cyan); font-weight:700}
+#log .ok{color:var(--green)}
+#log .warn{color:var(--yellow)}
+#log .bad{color:var(--red)}
+#log .sys{color:var(--dim)}
+#log .echo{color:var(--magenta)}
+
+.inputrow{display:flex; align-items:center; gap:6px; padding:10px 0 16px; border-top:1px solid #1c1c1c; margin-top:12px}
+.prompt{color:var(--yellow); font-weight:700}
+#cmd{
+  flex:1; background:transparent; border:none; outline:none; color:var(--ink);
+  font-family:'Courier New',monospace; font-size:1rem; caret-color:var(--cyan);
+}
+.hint{font-size:.8rem; color:var(--dim); text-align:center; margin-top:10px}
+
+.classrow{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; justify-content:center}
+button.classbtn{
+  font-family:'Courier New',monospace; font-size:.85rem; letter-spacing:.06em;
+  background:#0a0a0a; color:var(--cyan); border:1px solid var(--cyan); border-radius:2px;
+  padding:12px 18px; cursor:pointer;
+}
+button.classbtn:hover{background:var(--cyan); color:#000}
+</style>
+
+<div class="crt">
+  <div class="banner"><span class="bracket">&gt;</span> TAKE SWORD GO NORTH <span class="bracket">_</span></div>
+  <div class="subtitle">A TEXT ADVENTURE <span class="dim">·</span> 78 POINTS TO FIND <span class="dim">·</span> ©1983-STYLE, BUILT 2026</div>
+  <div id="screen">
+    <div id="log"></div>
+    <div id="classpick" class="classrow" style="display:none"></div>
+    <div class="inputrow" id="inputrow" style="display:none">
+      <span class="prompt">&gt;</span>
+      <input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    </div>
+  </div>
+  <div class="hint">TAKE SWORD AND GO NORTH &middot; EXAMINE AMULET &middot; ATTACK GOBLIN &middot; INVENTORY &middot; SCORE &middot; HELP</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- world data ----------------
+  var ITEMS = {
+    sword:  { name:"rusty sword", desc:"A short blade, pitted but still sharp enough.", weapon:true, bonus:2 },
+    torch:  { name:"oil torch", desc:"Unlit, but the oil hasn't dried up yet. It smoulders to life the moment you carry it.", light:true },
+    vial:   { name:"vial of holy water", desc:"Faintly warm to the touch. Priests set store by this sort of thing.", heal:3 },
+    shield: { name:"dented shield", desc:"Old dwarf-work, by the look of the rivets. Better than an empty hand.", block:1 },
+    amulet: { name:"silver amulet", desc:"Tarnished black, but the silver underneath still catches the light.", score:10, treasure:true },
+    gold:   { name:"pile of gold coins", desc:"Goblin-hoarded, which is to say filthy, but gold is gold.", score:15, treasure:true },
+    gem:    { name:"uncut gem", desc:"Rough-cut and the size of your thumb. Worth a small fortune, probably.", score:10, treasure:true },
+    key:    { name:"rusty key", desc:"Barely holding its shape. One good twist left in it, maybe.", key:true },
+    tome:   { name:"Tome of Ashes", desc:"Still warm from whatever Morvath was doing with it. This is why you came.", score:30, treasure:true }
+  };
+
+  var MONSTERS = {
+    goblin_scout:  { name:"goblin scout", hp:6, maxhp:6, atk:2, score:5 },
+    goblin_guards: { name:"pair of goblin guards", hp:10, maxhp:10, atk:3, score:8 },
+    morvath:       { name:"Morvath the Ash-Wizard", hp:20, maxhp:20, atk:5, score:30, undead:true }
+  };
+
+  var ROOMS = {
+    1: { name:"MOUNTAIN PATH", desc:"A narrow path switchbacks up the flank of Mount Cael. Ahead, a cave mouth breathes cold air into the evening.", exits:{down:2} },
+    2: { name:"CAVE ENTRANCE", desc:"Rough-hewn stone. Sconces on the walls have held no torches in a long while. Passages lead north and east; a darker way leads down.", exits:{up:1,n:3,e:4,down:6} },
+    3: { name:"ARMORY", desc:"Weapon racks line the walls, most empty, most rotted. A couple of things remain worth taking.", exits:{s:2}, items:["sword","torch"] },
+    4: { name:"CHAPEL ANTECHAMBER", desc:"Faded murals of robed figures look down, patient, from a cracked ceiling. A passage continues north.", exits:{w:2,n:5}, items:["vial"] },
+    5: { name:"COLLAPSED SHRINE", desc:"Fallen masonry half-fills the room. Something glints among the rubble.", exits:{s:4}, items:["amulet"], dark:true },
+    6: { name:"GOBLIN WARREN - ENTRANCE", desc:"A rough-cut tunnel, torch-scored on the walls. Something hisses in the dark ahead.", exits:{up:2,down:7}, dark:true, monster:"goblin_scout", blockExit:"down" },
+    7: { name:"GOBLIN BARRACKS", desc:"Bedding, bones, and a guttering fire. Two guards bar the way deeper in.", exits:{up:6,down:8}, items:["key","gold"], monster:"goblin_guards", blockExit:"down" },
+    8: { name:"LABYRINTH THRESHOLD", desc:"A door of black iron, locked fast, waits where the tunnel should continue. A passage also opens north into older, rougher stone.", exits:{up:7,n:9}, locked:true, lockExit:"n" },
+    9: { name:"TWISTING PASSAGE", desc:"The tunnel bends oddly here, stone worn smooth by something that isn't water. It is hard to tell which way is which.", exits:{n:10,e:9,s:8} },
+    10:{ name:"TWISTING PASSAGE", desc:"Another bend, near-identical to the last. You press on, trusting your sense of down more than your sense of direction.", exits:{s:9,w:10,e:11,down:13} },
+    11:{ name:"DEAD END", desc:"The passage simply stops. Someone, or something, left a small hoard here once and never came back for it.", exits:{w:10}, items:["gem","shield"] },
+    13:{ name:"ANTECHAMBER", desc:"The air here is warm and smells of old ash. Firelight flickers from an opening to the north - whatever is in there knows you've come.", exits:{n:14} },
+    14:{ name:"MORVATH'S LAIR", desc:"A wizard half-fused to bone and old armour turns to face you, a tome of black pages clutched in one skeletal hand.", exits:{s:13}, monster:"morvath" }
+  };
+
+  // goblin scout 5 + goblin guards 8 + amulet 10 + gold 15 + gem 10 + Morvath 30
+  var MAX_SCORE = 78;
+
+  var CLASSES = {
+    warrior: { name:"Warrior", hp:18, atk:4, intro:"No spells, no tricks - just a strong arm and a thicker skull than most things down here." },
+    wizard:  { name:"Wizard",  hp:12, atk:2, spell:"fireball", spellUses:3, intro:"Weaker in a straight fight, but FIREBALL will even the odds three times over." },
+    priest:  { name:"Priest",  hp:14, atk:3, spell:"heal", spellUses:3, intro:"A steady hand and HEAL to call on three times - and something that fears you more than you fear it." }
+  };
+
+  // ---------------- state ----------------
+  var STORAGE_KEY = "mount-cael-save-v1";
+  var state = null;
+
+  function freshState(){
+    return {
+      phase:"intro",        // intro | class | playing | dead | won
+      cls:null, hp:0, maxhp:0, spellUses:0,
+      room:1, visited:{}, inv:[], score:0,
+      roomState:{},          // per-room: {cleared:bool, looted:bool}
+      combat:null,            // { key, hp, name }
+      history:[]
+    };
+  }
+
+  function save(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+    try { window.claude && window.claude.hot && window.claude.hot.snapshot && window.claude.hot.snapshot(state); } catch(e){}
+  }
+  function load(){
+    try { var raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(e){}
+    return null;
+  }
+
+  function hasLight(){
+    return state.inv.indexOf("torch") !== -1;
+  }
+  function roomState(id){
+    if (!state.roomState[id]) state.roomState[id] = {};
+    return state.roomState[id];
+  }
+
+  // ---------------- output ----------------
+  var logEl = document.getElementById("log");
+  var cmdEl = document.getElementById("cmd");
+  var classEl = document.getElementById("classpick");
+  var inputRow = document.getElementById("inputrow");
+  var screenEl = document.getElementById("screen");
+
+  function out(text, cls){
+    var div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.innerHTML = text;
+    logEl.appendChild(div);
+    screenEl.scrollTop = screenEl.scrollHeight;
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+  function blank(){ out("&nbsp;"); }
+
+  // ---------------- room rendering ----------------
+  function describeRoom(id, force){
+    var r = ROOMS[id];
+    var dark = r.dark && !hasLight();
+    out(r.name, "room");
+    if (dark){
+      out("It is pitch dark down here, and you have nothing to light the way. You can feel walls close on more than one side, but little else.");
+    } else {
+      out(r.desc);
+      var rs = roomState(id);
+      var present = (r.items||[]).filter(function(it){ return !rs.taken || rs.taken.indexOf(it) === -1; });
+      if (present.length){
+        out("You can see: " + present.map(function(it){ return ITEMS[it].name; }).join(", ") + ".", "sys");
+      }
+      if (r.monster && !(rs.cleared)){
+        var m = MONSTERS[r.monster];
+        out((m.name.charAt(0).toUpperCase()+m.name.slice(1)) + " blocks your way, watching you.", "warn");
+      }
+      var exits = Object.keys(r.exits);
+      out("Exits: " + exits.join(", ") + ".", "sys");
+    }
+    state.visited[id] = true;
+  }
+
+  // ---------------- parser ----------------
+  var SYNONYMS = {
+    // room exits use short keys (n/s/e/w/up/down), so every direction form
+    // normalizes DOWN to that short form, never up to the long word
+    north:"n", south:"s", east:"e", west:"w", u:"up", d:"down",
+    go:"go", walk:"go", move:"go",
+    get:"take", grab:"take", pickup:"take",
+    i:"inventory", inv:"inventory",
+    x:"examine", look:"look", l:"look",
+    attack:"attack", fight:"attack", kill:"attack",
+    quaff:"drink",
+    flee:"run", escape:"run"
+  };
+
+  function normalize(tok){
+    tok = tok.toLowerCase();
+    return SYNONYMS[tok] || tok;
+  }
+
+  function stripArticles(words){
+    return words.filter(function(w){ return w !== "the" && w !== "a" && w !== "an"; });
+  }
+
+  function handleCommand(raw){
+    out('<span class="prompt">&gt;</span> ' + raw, "echo");
+    var clauses = raw.toLowerCase().split(/\s+and\s+/);
+    clauses.forEach(function(clause){
+      runOne(clause.trim());
+    });
+    save();
+  }
+
+  function runOne(clause){
+    if (!clause) return;
+    var words = stripArticles(clause.split(/\s+/));
+    if (!words.length) return;
+    var verb = normalize(words[0]);
+    var rest = words.slice(1).join(" ");
+
+    if (state.phase === "dead" || state.phase === "won"){
+      out("The adventure is over. Type RESTART to begin again.", "sys");
+      return;
+    }
+
+    if (state.combat){
+      return combatCommand(verb, rest);
+    }
+
+    if (["n","s","e","w","up","down"].indexOf(verb) !== -1 || verb === "go"){
+      var dir = verb === "go" ? normalize(rest.split(/\s+/)[0]||"") : verb;
+      return tryMove(dir);
+    }
+
+    switch(verb){
+      case "look": return describeRoom(state.room, true);
+      case "inventory": return showInventory();
+      case "take": return tryTake(rest);
+      case "drop": return tryDrop(rest);
+      case "examine": return tryExamine(rest);
+      case "attack": return tryAttack(rest);
+      case "drink": return tryDrink(rest);
+      case "unlock": case "open": return tryUnlock();
+      case "score": return showScore();
+      case "help": return showHelp();
+      case "restart": return doRestart();
+      default:
+        out("I don't understand \"" + verb + "\".", "bad");
+    }
+  }
+
+  function tryMove(dir){
+    if (!dir){ out("Go where?", "bad"); return; }
+    var r = ROOMS[state.room];
+    if (!r.exits[dir]){ out("You can't go that way.", "bad"); return; }
+    if (r.dark && !hasLight()){ out("You grope along the wall but can't find a way through in the dark.", "warn"); return; }
+    if (r.monster && !roomState(state.room).cleared && r.blockExit === dir){
+      out("The " + MONSTERS[r.monster].name + " isn't about to let you past.", "warn");
+      return;
+    }
+    if (r.locked && r.lockExit === dir){
+      if (state.inv.indexOf("key") !== -1){
+        out("The rusty key turns, protesting, and the iron door swings open.", "ok");
+        r.locked = false;
+      } else {
+        out("The door is locked fast. You'll need something to open it.", "bad");
+        return;
+      }
+    }
+    var dest = r.exits[dir];
+    // escaping after the Tome is taken: any move from the lair triggers the win
+    if (state.room === 14 && state.inv.indexOf("tome") !== -1){
+      return doWin();
+    }
+    state.room = dest;
+    blank();
+    describeRoom(dest);
+  }
+
+  function showInventory(){
+    if (!state.inv.length){ out("You are carrying nothing.", "sys"); return; }
+    out("You are carrying: " + state.inv.map(function(id){ return ITEMS[id].name; }).join(", ") + ".", "sys");
+  }
+
+  function findItemHere(name){
+    var r = ROOMS[state.room];
+    var rs = roomState(state.room);
+    var present = (r.items||[]).filter(function(it){ return !rs.taken || rs.taken.indexOf(it) === -1; });
+    return present.find(function(it){ return ITEMS[it].name.indexOf(name) !== -1 || it === name; });
+  }
+
+  function tryTake(name){
+    if (!name){ out("Take what?", "bad"); return; }
+    var id = findItemHere(name);
+    if (!id){ out("You don't see that here.", "bad"); return; }
+    var rs = roomState(state.room);
+    rs.taken = rs.taken || [];
+    rs.taken.push(id);
+    state.inv.push(id);
+    out("You take the " + ITEMS[id].name + ".", "ok");
+    if (ITEMS[id].treasure){
+      state.score += ITEMS[id].score;
+      out("Your score rises by " + ITEMS[id].score + " points.", "ok");
+    }
+  }
+
+  function tryDrop(name){
+    if (!name){ out("Drop what?", "bad"); return; }
+    var id = state.inv.find(function(it){ return ITEMS[it].name.indexOf(name) !== -1 || it === name; });
+    if (!id){ out("You aren't carrying that.", "bad"); return; }
+    state.inv.splice(state.inv.indexOf(id),1);
+    out("You drop the " + ITEMS[id].name + ".", "ok");
+  }
+
+  function tryExamine(name){
+    if (!name){ out("Examine what?", "bad"); return; }
+    var id = state.inv.find(function(it){ return ITEMS[it].name.indexOf(name) !== -1 || it === name; }) || findItemHere(name);
+    if (!id){ out("You don't see that here.", "bad"); return; }
+    out(ITEMS[id].desc);
+  }
+
+  function tryDrink(name){
+    var id = state.inv.find(function(it){ return it === "vial"; });
+    if (!id){ out("You have nothing like that to drink.", "bad"); return; }
+    state.hp = Math.min(state.maxhp, state.hp + ITEMS.vial.heal);
+    state.inv.splice(state.inv.indexOf("vial"),1);
+    out("The holy water burns on the way down, and you feel steadier for it. +" + ITEMS.vial.heal + " HP.", "ok");
+  }
+
+  function tryUnlock(){
+    var r = ROOMS[state.room];
+    if (!r.locked){ out("There's nothing here to unlock.", "sys"); return; }
+    tryMove(r.lockExit);
+  }
+
+  function tryAttack(name){
+    var r = ROOMS[state.room];
+    if (!r.monster || roomState(state.room).cleared){ out("There's nothing here to fight.", "bad"); return; }
+    var m = MONSTERS[r.monster];
+    state.combat = { key: r.monster, hp: m.hp, name: m.name };
+    out("You square up against the " + m.name + ".", "warn");
+    combatStatus();
+  }
+
+  function combatStatus(){
+    var c = state.combat;
+    out("YOU: " + state.hp + "/" + state.maxhp + " HP  &middot;  " + c.name.toUpperCase() + ": " + Math.max(0,c.hp) + " HP", "sys");
+    var opts = "ATTACK";
+    var cls = CLASSES[state.cls];
+    if (cls.spell && state.spellUses > 0) opts += " / CAST " + cls.spell.toUpperCase() + " (" + state.spellUses + " left)";
+    opts += " / RUN";
+    out(opts, "sys");
+  }
+
+  function combatCommand(verb, rest){
+    var c = state.combat;
+    var m = MONSTERS[c.key];
+    var cls = CLASSES[state.cls];
+
+    if (verb === "run"){
+      state.combat = null;
+      out("You break off and retreat. The " + c.name + " lets you go, for now.", "warn");
+      return;
+    }
+    if (verb === "cast" && cls.spell && rest.indexOf(cls.spell) !== -1){
+      if (state.spellUses <= 0){ out("You have no spell charges left.", "bad"); return; }
+      state.spellUses--;
+      if (cls.spell === "fireball"){
+        var dmg = 8;
+        c.hp -= dmg;
+        out("A gout of fire roars from your hands. " + c.name + " takes " + dmg + " damage.", "ok");
+      } else if (cls.spell === "heal"){
+        var heal = 6;
+        state.hp = Math.min(state.maxhp, state.hp + heal);
+        out("Warmth spreads through you. +" + heal + " HP.", "ok");
+      }
+    } else if (verb === "attack" || verb === "cast"){
+      var weapon = state.inv.indexOf("sword") !== -1 ? ITEMS.sword.bonus : 0;
+      var undeadBonus = (m.undead && state.cls === "priest") ? 3 : 0;
+      var dmg2 = cls.atk + weapon + undeadBonus + Math.floor(Math.random()*3);
+      c.hp -= dmg2;
+      out("You strike the " + c.name + " for " + dmg2 + " damage" + (undeadBonus ? " (your faith sears it further)" : "") + ".", "ok");
+    } else {
+      out("In a fight you can ATTACK, " + (cls.spell ? "CAST " + cls.spell.toUpperCase() + ", " : "") + "or RUN.", "bad");
+      return;
+    }
+
+    if (c.hp <= 0){
+      out("The " + c.name + " falls.", "ok");
+      roomState(state.room).cleared = true;
+      state.score += m.score;
+      out("Your score rises by " + m.score + " points.", "ok");
+      state.combat = null;
+      if (c.key === "morvath"){
+        state.inv.push("tome");
+        out("As the Ash-Wizard crumbles, the Tome of Ashes drops free. You snatch it up.", "ok");
+      }
+      return;
+    }
+
+    var block = state.inv.indexOf("shield") !== -1 ? ITEMS.shield.block : 0;
+    var incoming = Math.max(0, m.atk + Math.floor(Math.random()*2) - block);
+    state.hp -= incoming;
+    out("The " + c.name + " hits back for " + incoming + " damage.", "bad");
+    if (state.hp <= 0){
+      return doDeath(c.name);
+    }
+    combatStatus();
+  }
+
+  function showScore(){
+    out("You have scored " + state.score + " out of " + MAX_SCORE + " points.", "sys");
+  }
+
+  function showHelp(){
+    out("Verbs: GO/N/S/E/W/UP/DOWN, LOOK, EXAMINE, TAKE, DROP, INVENTORY, ATTACK, DRINK, UNLOCK, SCORE, HELP.", "sys");
+    out("Commands can be chained: TAKE SWORD AND GO NORTH.", "sys");
+  }
+
+  function doDeath(killer){
+    state.phase = "dead";
+    blank();
+    out("YOU HAVE DIED", "bad");
+    out("The " + killer + " finishes what it started. Mount Cael keeps its secrets a while longer.");
+    showScore();
+    out("Type RESTART to try again.", "sys");
+    save();
+  }
+
+  function doWin(){
+    state.phase = "won";
+    blank();
+    out("YOU ESCAPE MOUNT CAEL", "ok");
+    out("Tome under your arm, you half-run, half-fall back through tunnel and chapel and cave mouth, out into cold night air that has never tasted better. Whatever Morvath meant to do with the Tome of Ashes, he'll never get the chance now.");
+    showScore();
+    if (state.score >= MAX_SCORE) out("A perfect run. Mount Cael has nothing left to give up.", "ok");
+    out("Type RESTART to play again.", "sys");
+    save();
+  }
+
+  function doRestart(){
+    state = freshState();
+    save();
+    boot();
+  }
+
+  // ---------------- intro / class select ----------------
+  function boot(){
+    logEl.innerHTML = "";
+    classEl.style.display = "none";
+    inputRow.style.display = "none";
+    out("MOUNT CAEL has swallowed every adventurer who's gone looking for the Ash-Wizard Morvath and his stolen Tome. You mean to be the first to come back out.", "ok");
+    blank();
+    out("Choose your class:", "sys");
+    classEl.innerHTML = "";
+    Object.keys(CLASSES).forEach(function(key){
+      var c = CLASSES[key];
+      var b = document.createElement("button");
+      b.className = "classbtn";
+      b.textContent = c.name.toUpperCase() + " (HP " + c.hp + ")";
+      b.addEventListener("click", function(){ pickClass(key); });
+      classEl.appendChild(b);
+    });
+    classEl.style.display = "flex";
+  }
+
+  function pickClass(key){
+    var c = CLASSES[key];
+    state.cls = key;
+    state.hp = c.hp; state.maxhp = c.hp;
+    state.spellUses = c.spellUses || 0;
+    state.phase = "playing";
+    classEl.style.display = "none";
+    blank();
+    out("You are the " + c.name + ". " + c.intro, "ok");
+    blank();
+    describeRoom(state.room);
+    inputRow.style.display = "flex";
+    cmdEl.focus();
+    save();
+  }
+
+  function resumeInProgress(){
+    logEl.innerHTML = "";
+    classEl.style.display = "none";
+    var c = CLASSES[state.cls];
+    out("Welcome back. You are the " + c.name + ".", "ok");
+    blank();
+    if (state.combat){
+      out("You are still locked in combat with the " + state.combat.name + ".", "warn");
+      combatStatus();
+    } else {
+      describeRoom(state.room);
+    }
+    inputRow.style.display = "flex";
+    cmdEl.focus();
+  }
+
+  // ---------------- input ----------------
+  cmdEl.addEventListener("keydown", function(e){
+    if (e.key !== "Enter") return;
+    var val = cmdEl.value.trim();
+    cmdEl.value = "";
+    if (!val) return;
+    handleCommand(val);
+  });
+
+  // ---------------- boot ----------------
+  function start(initial){
+    state = (initial && initial.phase) ? initial : (load() || freshState());
+    if (state.phase === "playing" || state.phase === "dead" || state.phase === "won"){
+      resumeInProgress();
+    } else {
+      boot();
+    }
+  }
+  if (window.claude && window.claude.hot && window.claude.hot.ready){
+    window.claude.hot.ready(function(data){ start(data); });
+  } else {
+    start(window.claude && window.claude.hot ? window.claude.hot.data : null);
+  }
+})();
+</script>
