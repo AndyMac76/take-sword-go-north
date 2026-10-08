@@ -331,6 +331,8 @@ button.classbtn:hover{background:var(--cyan); color:#000}
     var verb = normalize(words[0]);
     var rest = words.slice(1).join(" ");
 
+    if (verb === "restart") return doRestart();
+
     if (state.phase === "dead" || state.phase === "won"){
       out("The adventure is over. Type RESTART to begin again.", "sys");
       return;
