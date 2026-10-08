@@ -35,6 +35,13 @@ body{
   border:1px solid #2a2a2a; background:#040404; border-radius:2px;
   padding:16px 16px 0; min-height:360px;
 }
+#artbox{
+  display:flex; justify-content:center; margin-bottom:14px;
+}
+#art{
+  width:144px; height:144px; image-rendering:pixelated; image-rendering:crisp-edges;
+  border:1px solid #2a2a2a; background:#000;
+}
 #log{white-space:pre-wrap; line-height:1.55; font-size:.95rem; word-wrap:break-word}
 #log .room{color:var(--cyan); font-weight:700}
 #log .ok{color:var(--green)}
@@ -64,6 +71,7 @@ button.classbtn:hover{background:var(--cyan); color:#000}
   <div class="banner"><span class="bracket">&gt;</span> TAKE SWORD GO NORTH <span class="bracket">_</span></div>
   <div class="subtitle">A TEXT ADVENTURE <span class="dim">·</span> 78 POINTS TO FIND <span class="dim">·</span> ©1983-STYLE, BUILT 2026</div>
   <div id="screen">
+    <div id="artbox"><canvas id="art" width="32" height="32"></canvas></div>
     <div id="log"></div>
     <div id="classpick" class="classrow" style="display:none"></div>
     <div class="inputrow" id="inputrow" style="display:none">
@@ -122,6 +130,94 @@ button.classbtn:hover{background:var(--cyan); color:#000}
     priest:  { name:"Priest",  hp:14, atk:3, spell:"heal", spellUses:3, intro:"A steady hand and HEAL to call on three times - and something that fears you more than you fear it." }
   };
 
+  // ---------------- pixel art (genuine 8-colour Spectrum ink palette) ----------------
+  var INK = { K:"#000000", B:"#4c4ce6", R:"#e64c4c", M:"#e64ce6", G:"#4ce64c", C:"#4ce6e6", Y:"#e6e64c", W:"#e6e6e6" };
+  var artCanvas = document.getElementById("art");
+  var actx = artCanvas.getContext("2d");
+  actx.imageSmoothingEnabled = false;
+
+  function clearArt(color){ actx.fillStyle = color; actx.fillRect(0,0,32,32); }
+  function block(x,y,w,h,ink){ actx.fillStyle = INK[ink]; actx.fillRect(x,y,w,h); }
+  function diamond(cx,cy,r,ink){
+    actx.fillStyle = INK[ink];
+    actx.save(); actx.translate(cx,cy); actx.rotate(Math.PI/4);
+    actx.fillRect(-r,-r,r*2,r*2);
+    actx.restore();
+  }
+  function triangle(x1,y1,x2,y2,x3,y3,ink){
+    actx.fillStyle = INK[ink];
+    actx.beginPath(); actx.moveTo(x1,y1); actx.lineTo(x2,y2); actx.lineTo(x3,y3); actx.closePath(); actx.fill();
+  }
+
+  var ICONS = {
+    cave: function(){
+      clearArt(INK.B);
+      block(2,4,28,26,"K");
+      block(9,10,14,20,"C");
+      block(14,24,2,2,"Y");
+      block(9,10,2,2,"W"); block(21,10,2,2,"W");
+    },
+    armory: function(){
+      clearArt("#111111");
+      actx.save(); actx.translate(16,16); actx.rotate(-Math.PI/4);
+      actx.fillStyle = INK.W; actx.fillRect(-2,-14,4,28);
+      actx.fillStyle = INK.R; actx.fillRect(-4,-3,8,6);
+      actx.restore();
+      actx.save(); actx.translate(16,16); actx.rotate(Math.PI/4);
+      actx.fillStyle = INK.W; actx.fillRect(-2,-14,4,28);
+      actx.fillStyle = INK.R; actx.fillRect(-4,-3,8,6);
+      actx.restore();
+    },
+    chapel: function(){
+      clearArt(INK.M);
+      block(14,4,4,24,"Y");
+      block(6,12,20,4,"Y");
+      block(13,3,6,26,"K"); block(16,3,0,0,"K");
+      block(14,5,4,20,"Y");
+      block(7,13,18,2,"Y");
+    },
+    shrine: function(){
+      clearArt("#1a1a1a");
+      diamond(16,14,7,"C");
+      diamond(16,14,3,"W");
+      block(4,26,6,4,"K"); block(12,27,6,3,"K"); block(20,25,4,5,"K"); block(25,27,4,3,"K");
+    },
+    goblin: function(){
+      clearArt(INK.K);
+      block(7,8,18,16,"G");
+      block(10,13,3,3,"R"); block(19,13,3,3,"R");
+      block(9,22,14,3,"Y");
+      block(10,23,2,2,"K"); block(14,23,2,2,"K"); block(18,23,2,2,"K"); block(22,23,2,2,"K");
+      block(4,6,4,4,"G"); block(24,6,4,4,"G");
+    },
+    door: function(){
+      clearArt("#2a2a2a");
+      block(8,2,16,28,"K");
+      block(8,10,16,1,"W"); block(8,19,16,1,"W");
+      block(19,15,2,2,"Y");
+    },
+    lair: function(){
+      clearArt("#1a0505");
+      triangle(16,4,6,30,26,30,"M");
+      block(14,10,4,4,"K");
+      block(15,11,2,2,"R");
+      block(10,22,6,5,"K");
+    }
+  };
+
+  var ROOM_ICON = { 1:"cave",2:"cave",9:"cave",10:"cave",11:"cave",13:"cave",3:"armory",4:"chapel",5:"shrine",6:"goblin",7:"goblin",8:"door",14:"lair" };
+
+  function drawRoomArt(id){
+    var r = ROOMS[id];
+    if (r.dark && !hasLight()){
+      clearArt("#000000");
+      block(14,14,1,1,"W"); block(20,9,1,1,"W"); block(8,20,1,1,"W");
+      return;
+    }
+    var key = ROOM_ICON[id] || "cave";
+    ICONS[key]();
+  }
+
   // ---------------- state ----------------
   var STORAGE_KEY = "mount-cael-save-v1";
   var state = null;
@@ -175,6 +271,7 @@ button.classbtn:hover{background:var(--cyan); color:#000}
   function describeRoom(id, force){
     var r = ROOMS[id];
     var dark = r.dark && !hasLight();
+    drawRoomArt(id);
     out(r.name, "room");
     if (dark){
       out("It is pitch dark down here, and you have nothing to light the way. You can feel walls close on more than one side, but little else.");
@@ -503,6 +600,7 @@ button.classbtn:hover{background:var(--cyan); color:#000}
     out("Welcome back. You are the " + c.name + ".", "ok");
     blank();
     if (state.combat){
+      drawRoomArt(state.room);
       out("You are still locked in combat with the " + state.combat.name + ".", "warn");
       combatStatus();
     } else {
